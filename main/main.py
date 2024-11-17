@@ -11,6 +11,8 @@ from services.pinata_services import PinataService
 from services.audio import record_audio, test_audio_recording
 from services.video import record_video, test_video_recording
 from services.gaze import analyze_gaze_vectors
+from flask_cors import CORS
+from flask_socketio import SocketIO
 
 dotenv.load_dotenv()
 
@@ -20,11 +22,14 @@ pinata_jwt = os.getenv("PINATA_JWT")
 pinata_gateway = os.getenv("PINATA_GATEWAY")
 pinata_group_id = "01933748-f918-7e94-8c17-7564581a5188"
 processing_server_url = "http://127.0.0.1:5000/process_video_from_cid"
-emotional_analysis_url = "http://192.168.137.253:5000/analyze"  # Adjust this URL as needed
+emotional_analysis_url = "https://0574-72-225-33-153.ngrok-free.app/analyze"  # Adjust this URL as needed
 
 pinata_service = PinataService(pinata_secret_key, pinata_jwt, pinata_gateway)
 
+# Initialize Flask app
 app = Flask(__name__)
+CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*")  
 
 # Global variables
 recording = False
@@ -134,6 +139,7 @@ def upload_heatmap_to_pinata():
         with open(heatmap_file, 'rb') as heatmap:
             heatmap_cid = pinata_service.upload_file_to_group(pinata_group_id, heatmap_file, heatmap.read())
         print(f"Heatmap uploaded to Pinata. CID: {heatmap_cid}")
+        socketio.emit("heatmap", heatmap_cid)
         return heatmap_cid
     except Exception as e:
         print(f"Error uploading heatmap to Pinata: {str(e)}")
@@ -247,10 +253,31 @@ def end_session():
     else:
         return jsonify({"message": "No recording in progress"}), 400
 
+@app.route('/api/test_emit', methods=['POST'])
+def test_emit():
+    socketio.emit("heatmap", "bafkreic35cqmcouss4vnnosgl5vmncpgnkaqqtl5repxb6vyng36g5preu")
+    
+    return jsonify({"message": "success"}), 200
+
+
+@socketio.on('connect')
+def handle_connect():
+    print("Client connected")
+
+@socketio.on('message')
+def handle_message(data):
+    print(f"Received message: {data}")
+    # emit('response', {'data': 'Message received!'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print("Client disconnected")
+
 if __name__ == '__main__':
     if test_recording():
         print("Test recording successful. Starting the server...")
-        app.run(port="5001", debug=True)
+        # app.run(port="5001") #, debug=True)
+        socketio.run(app, host="0.0.0.0", port=5001, debug=True)
     else:
         print("Test recording failed. Please check your IP webcam connection and try again.")
         exit(1)
