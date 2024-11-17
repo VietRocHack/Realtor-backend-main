@@ -22,7 +22,7 @@ pinata_jwt = os.getenv("PINATA_JWT")
 pinata_gateway = os.getenv("PINATA_GATEWAY")
 pinata_group_id = "01933748-f918-7e94-8c17-7564581a5188"
 processing_server_url = "http://127.0.0.1:5000/process_video_from_cid"
-emotional_analysis_url = "https://0574-72-225-33-153.ngrok-free.app/analyze"  # Adjust this URL as needed
+emotional_analysis_url = "http://192.168.137.253:5000/analyze"  # Adjust this URL as needed
 
 pinata_service = PinataService(pinata_secret_key, pinata_jwt, pinata_gateway)
 
@@ -122,16 +122,15 @@ def generate_heatmap(counts):
         for j, emotion in enumerate(emotions):
             data[i, j] = counts[obj].get(emotion, 0)
 
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(14, 10))
     plt.imshow(data, cmap='YlOrRd', aspect='auto')
     plt.colorbar(label='Count')
-    plt.xticks(range(len(emotions)), emotions, rotation=45, ha='right')
-    plt.yticks(range(len(objects)), objects)
-    plt.xlabel('Emotions')
-    plt.ylabel('Objects')
-    plt.title('Object-Emotion Heatmap')
+    plt.xticks(range(len(emotions)), emotions, rotation=45, ha='right', fontsize=40)
+    plt.yticks(range(len(objects)), objects, fontsize=40)
+    plt.xlabel('Emotions', fontsize=45)
+    plt.ylabel('Objects', fontsize=45)
     plt.tight_layout()
-    plt.savefig(heatmap_file)
+    plt.savefig(heatmap_file, dpi=300, bbox_inches='tight')
     plt.close()
 
 def upload_heatmap_to_pinata():
