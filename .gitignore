@@ -1,6 +1,6 @@
 venv/*
 
-**/recordings/*
+**/*recordings/*
 
 **/.env
 **/__pycache__
