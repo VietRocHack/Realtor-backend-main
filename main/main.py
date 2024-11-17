@@ -4,7 +4,6 @@ import time
 import os
 import dotenv
 import requests
-import json
 import numpy as np
 import matplotlib.pyplot as plt
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -40,7 +39,10 @@ DURATION = 10  # Total duration in seconds
 FRAME_COUNT = FPS * DURATION
 
 # Data storage
-data_file = 'object_emotion_counts.json'
+heatmap_file = 'object_emotion_heatmap.png'
+
+# Global object to store counts
+object_emotion_counts = {}
 
 def test_recording():
     print("Running recording test...")
@@ -94,23 +96,16 @@ def send_to_emotional_analysis_server(video_cid):
         return None
 
 def update_object_emotion_counts(object_emotion_pairs):
-    if os.path.exists(data_file):
-        with open(data_file, 'r') as f:
-            counts = json.load(f)
-    else:
-        counts = {}
-
+    global object_emotion_counts
+    
     for obj, emotion in object_emotion_pairs:
-        if obj not in counts:
-            counts[obj] = {}
-        if emotion not in counts[obj]:
-            counts[obj][emotion] = 0
-        counts[obj][emotion] += 1
+        if obj not in object_emotion_counts:
+            object_emotion_counts[obj] = {}
+        if emotion not in object_emotion_counts[obj]:
+            object_emotion_counts[obj][emotion] = 0
+        object_emotion_counts[obj][emotion] += 1
 
-    with open(data_file, 'w') as f:
-        json.dump(counts, f)
-
-    return counts
+    return object_emotion_counts
 
 def generate_heatmap(counts):
     objects = list(counts.keys())
@@ -131,8 +126,18 @@ def generate_heatmap(counts):
     plt.ylabel('Objects')
     plt.title('Object-Emotion Heatmap')
     plt.tight_layout()
-    plt.savefig('object_emotion_heatmap.png')
+    plt.savefig(heatmap_file)
     plt.close()
+
+def upload_heatmap_to_pinata():
+    try:
+        with open(heatmap_file, 'rb') as heatmap:
+            heatmap_cid = pinata_service.upload_file_to_group(pinata_group_id, heatmap_file, heatmap.read())
+        print(f"Heatmap uploaded to Pinata. CID: {heatmap_cid}")
+        return heatmap_cid
+    except Exception as e:
+        print(f"Error uploading heatmap to Pinata: {str(e)}")
+        return None
 
 def record_video_audio():
     global recording
@@ -207,7 +212,14 @@ def record_video_audio():
             # Update object-emotion counts and generate heatmap
             counts = update_object_emotion_counts(combined)
             generate_heatmap(counts)
-            print("Heatmap generated and saved as 'object_emotion_heatmap.png'")
+            print(f"Heatmap generated and saved as '{heatmap_file}'")
+
+            # Upload heatmap to Pinata
+            heatmap_cid = upload_heatmap_to_pinata()
+            if heatmap_cid:
+                print(f"Heatmap uploaded to Pinata. CID: {heatmap_cid}")
+            else:
+                print("Failed to upload heatmap to Pinata.")
         else:
             print("Failure to combine results!")
         break
