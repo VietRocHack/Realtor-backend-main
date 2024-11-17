@@ -4,6 +4,7 @@ import time
 import os
 import dotenv
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.pinata_services import PinataService
 from services.audio import record_audio, test_audio_recording
 from services.video import record_video, test_video_recording
@@ -17,6 +18,7 @@ pinata_jwt = os.getenv("PINATA_JWT")
 pinata_gateway = os.getenv("PINATA_GATEWAY")
 pinata_group_id = "01933748-f918-7e94-8c17-7564581a5188"
 processing_server_url = "http://127.0.0.1:5000/process_video_from_cid"
+emotional_analysis_url = "http://127.0.0.1:5002/analyze_emotion_from_cid"  # Adjust this URL as needed
 
 pinata_service = PinataService(pinata_secret_key, pinata_jwt, pinata_gateway)
 
@@ -67,6 +69,23 @@ def send_to_processing_server(video_cid):
         print(f"Error sending video CID to processing server: {str(e)}. Time taken: {elapsed_time:.2f} seconds")
         return None
 
+def send_to_emotional_analysis_server(video_cid):
+    start_time = time.time()
+    try:
+        response = requests.post(
+            emotional_analysis_url,
+            json={"video_cid": video_cid},
+            headers={"Content-Type": "application/json"}
+        )
+        response.raise_for_status()
+        elapsed_time = time.time() - start_time
+        print(f"Video CID {video_cid} sent to emotional analysis server successfully. Time taken: {elapsed_time:.2f} seconds")
+        return response.json()
+    except requests.RequestException as e:
+        elapsed_time = time.time() - start_time
+        print(f"Error sending video CID to emotional analysis server: {str(e)}. Time taken: {elapsed_time:.2f} seconds")
+        return None
+
 def record_video_audio():
     global recording
 
@@ -104,15 +123,34 @@ def record_video_audio():
         print(f"Video ID (CID): {video_cid}")
         print(f"Audio ID (CID): {audio_cid}")
 
-        # Send video to processing server and analyze results
-        gaze_vectors = send_to_processing_server(video_cid)
-        if gaze_vectors:
-            analysis_results = analyze_gaze_vectors(gaze_vectors['results'])
+        # Send video to processing and emotional analysis servers in parallel
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            gaze_future = executor.submit(send_to_processing_server, video_cid)
+            emotion_future = executor.submit(send_to_emotional_analysis_server, video_cid)
+
+            gaze_results = None
+            emotion_results = None
+
+            for future in as_completed([gaze_future, emotion_future]):
+                if future == gaze_future:
+                    gaze_results = future.result()
+                elif future == emotion_future:
+                    emotion_results = future.result()
+
+        if gaze_results:
+            gaze_analysis = analyze_gaze_vectors(gaze_results['results'])
             print("Gaze Analysis Results:")
-            for result in analysis_results:
-                print(result)
+            for second, gaze in gaze_analysis['results'].items():
+                print(f"Second {second}: {gaze}")
         else:
             print("Failed to get gaze vectors from processing server.")
+
+        if emotion_results:
+            print("Emotional Analysis Results:")
+            for second, emotion in emotion_results['results'].items():
+                print(f"Second {second}: {emotion}")
+        else:
+            print("Failed to get emotional analysis results.")
 
         break
     recording = False

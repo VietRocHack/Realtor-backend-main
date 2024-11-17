@@ -43,6 +43,6 @@ def analyze_gaze_vectors(gaze_vectors):
         most_common_direction = direction_counts.most_common(1)[0][0]
         most_looked_object = object_mapping.get(most_common_direction, 'unknown')
         
-        results.append(f"Second {i+1}: {most_looked_object}")
+        results.append(most_looked_object)
     
     return results
