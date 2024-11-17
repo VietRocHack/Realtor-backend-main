@@ -16,6 +16,11 @@ thread = None
 # Camera settings
 camera_ip = "http://192.168.137.37:8080"
 
+# Recording settings
+FRAME_COUNT = 150
+FPS = 15  # Set to 15 frames per second
+DURATION = 10  # Total duration in seconds
+
 def record_audio(filename, duration):
     audio_url = f"{camera_ip}/audio.wav"
     start_time = time.time()
@@ -48,13 +53,15 @@ def test_recording():
     # Test video recording
     cap = cv2.VideoCapture(f"{camera_ip}/video")
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter('recordings/test_video.mp4', fourcc, 15.0, (640, 480))
+    out = cv2.VideoWriter('recordings/test_video.mp4', fourcc, FPS, (640, 480))
 
+    frames_recorded = 0
     start_time = time.time()
-    while time.time() - start_time < 1:  # Record for 1 second
+    while frames_recorded < 15 and time.time() - start_time < 1:  # Record for 1 second or 15 frames
         ret, frame = cap.read()
         if ret:
             out.write(frame)
+            frames_recorded += 1
         else:
             print("Failed to capture frame from IP webcam")
             cap.release()
@@ -81,28 +88,37 @@ def record_video_audio():
     if not os.path.exists('recordings'):
         os.makedirs('recordings')
 
-    while recording:
-        video_filename = f'recordings/video_{int(time.time())}.mp4'
-        audio_filename = f'recordings/audio_{int(time.time())}.wav'
+    video_filename = f'recordings/video_{int(time.time())}.mp4'
+    audio_filename = f'recordings/audio_{int(time.time())}.wav'
 
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(video_filename, fourcc, 15.0, (640, 480))
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(video_filename, fourcc, FPS, (640, 480))
 
-        audio_thread = threading.Thread(target=record_audio, args=(audio_filename, 10))
-        audio_thread.start()
+    audio_thread = threading.Thread(target=record_audio, args=(audio_filename, DURATION))
+    audio_thread.start()
 
-        start_time = time.time()
-        while time.time() - start_time < 10 and recording:
-            ret, frame = cap.read()
-            if ret:
-                out.write(frame)
-            else:
-                break
+    frames_recorded = 0
+    start_time = time.time()
+    while recording and frames_recorded < FRAME_COUNT:
+        ret, frame = cap.read()
+        if ret:
+            out.write(frame)
+            frames_recorded += 1
+            
+            # Ensure we're recording at the correct FPS
+            elapsed_time = time.time() - start_time
+            expected_time = frames_recorded / FPS
+            if elapsed_time < expected_time:
+                time.sleep(expected_time - elapsed_time)
+        else:
+            break
 
-        out.release()
-        audio_thread.join()
-
+    recording = False  # Stop recording after 150 frames or 10 seconds
+    out.release()
     cap.release()
+    audio_thread.join()
+
+    print(f"Recording stopped after {frames_recorded} frames and {time.time() - start_time:.2f} seconds")
 
 @app.route('/api/start_session', methods=['POST'])
 def start_session():
