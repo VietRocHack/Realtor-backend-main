@@ -18,7 +18,7 @@ pinata_jwt = os.getenv("PINATA_JWT")
 pinata_gateway = os.getenv("PINATA_GATEWAY")
 pinata_group_id = "01933748-f918-7e94-8c17-7564581a5188"
 processing_server_url = "http://127.0.0.1:5000/process_video_from_cid"
-emotional_analysis_url = "http://127.0.0.1:5002/analyze_emotion_from_cid"  # Adjust this URL as needed
+emotional_analysis_url = "http://192.168.137.253:5000/analyze"  # Adjust this URL as needed
 
 pinata_service = PinataService(pinata_secret_key, pinata_jwt, pinata_gateway)
 
@@ -52,7 +52,7 @@ def test_recording():
     print("Recording test completed successfully")
     return True
 
-def send_to_processing_server(video_cid):
+def send_to_object_analysis_server(video_cid):
     start_time = time.time()
     try:
         response = requests.post(
@@ -63,7 +63,10 @@ def send_to_processing_server(video_cid):
         response.raise_for_status()
         elapsed_time = time.time() - start_time
         print(f"Video CID {video_cid} sent to processing server successfully. Time taken: {elapsed_time:.2f} seconds")
-        return response.json()
+
+        gaze_analysis = analyze_gaze_vectors(response.json()["results"])
+
+        return gaze_analysis
     except requests.RequestException as e:
         elapsed_time = time.time() - start_time
         print(f"Error sending video CID to processing server: {str(e)}. Time taken: {elapsed_time:.2f} seconds")
@@ -72,15 +75,13 @@ def send_to_processing_server(video_cid):
 def send_to_emotional_analysis_server(video_cid):
     start_time = time.time()
     try:
-        response = requests.post(
-            emotional_analysis_url,
-            json={"video_cid": video_cid},
-            headers={"Content-Type": "application/json"}
+        response = requests.get(
+            f"{emotional_analysis_url}/{video_cid}",
         )
         response.raise_for_status()
         elapsed_time = time.time() - start_time
         print(f"Video CID {video_cid} sent to emotional analysis server successfully. Time taken: {elapsed_time:.2f} seconds")
-        return response.json()
+        return response.json()["results"]
     except requests.RequestException as e:
         elapsed_time = time.time() - start_time
         print(f"Error sending video CID to emotional analysis server: {str(e)}. Time taken: {elapsed_time:.2f} seconds")
@@ -125,7 +126,7 @@ def record_video_audio():
 
         # Send video to processing and emotional analysis servers in parallel
         with ThreadPoolExecutor(max_workers=2) as executor:
-            gaze_future = executor.submit(send_to_processing_server, video_cid)
+            gaze_future = executor.submit(send_to_object_analysis_server, video_cid)
             emotion_future = executor.submit(send_to_emotional_analysis_server, video_cid)
 
             gaze_results = None
@@ -138,20 +139,25 @@ def record_video_audio():
                     emotion_results = future.result()
 
         if gaze_results:
-            gaze_analysis = analyze_gaze_vectors(gaze_results['results'])
             print("Gaze Analysis Results:")
-            for second, gaze in gaze_analysis['results'].items():
-                print(f"Second {second}: {gaze}")
+            print(gaze_results)
         else:
             print("Failed to get gaze vectors from processing server.")
 
         if emotion_results:
             print("Emotional Analysis Results:")
-            for second, emotion in emotion_results['results'].items():
-                print(f"Second {second}: {emotion}")
+            print(emotion_results)
         else:
             print("Failed to get emotional analysis results.")
 
+        if gaze_results and emotion_results:
+            combined = [(gaze_results[i], emotion_results[i]) for i in range(DURATION)]
+
+            print("Combined results:")
+            for i in range(len(combined)):
+                print(f"Minute{i}: {combined[i]}")
+        else:
+            print("Failure to combine!")
         break
     recording = False
 
