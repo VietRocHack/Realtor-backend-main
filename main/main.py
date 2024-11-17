@@ -23,6 +23,7 @@ pinata_gateway = os.getenv("PINATA_GATEWAY")
 pinata_group_id = "01933748-f918-7e94-8c17-7564581a5188"
 processing_server_url = "http://127.0.0.1:5000/process_video_from_cid"
 emotional_analysis_url = "http://192.168.137.253:5000/analyze"  # Adjust this URL as needed
+voice_analysis_url = "http://127.0.0.1:5002/cid_transcript"
 
 pinata_service = PinataService(pinata_secret_key, pinata_jwt, pinata_gateway)
 
@@ -64,6 +65,23 @@ def test_recording():
 
     print("Recording test completed successfully")
     return True
+
+def send_to_voice_analysis_server(audio_cid):
+    start_time = time.time()
+    try:
+        response = requests.get(
+            f"{voice_analysis_url}?cid={audio_cid}",
+            headers={"Content-Type": "application/json"}
+        )
+        response.raise_for_status()
+        elapsed_time = time.time() - start_time
+        print(f"Audio CID {audio_cid} sent to voice analysis server successfully. Time taken: {elapsed_time:.2f} seconds")
+
+        return response.json()["transcript"]
+    except requests.RequestException as e:
+        elapsed_time = time.time() - start_time
+        print(f"Error sending audio CID to voice analysis server: {str(e)}. Time taken: {elapsed_time:.2f} seconds")
+        return None
 
 def send_to_object_analysis_server(video_cid):
     start_time = time.time()
@@ -185,15 +203,19 @@ def record_video_audio():
         with ThreadPoolExecutor(max_workers=2) as executor:
             gaze_future = executor.submit(send_to_object_analysis_server, video_cid)
             emotion_future = executor.submit(send_to_emotional_analysis_server, video_cid)
+            voice_future = executor.submit(send_to_voice_analysis_server, audio_cid)
 
             gaze_results = None
             emotion_results = None
+            voice_results = None
 
-            for future in as_completed([gaze_future, emotion_future]):
+            for future in as_completed([gaze_future, emotion_future, voice_future]):
                 if future == gaze_future:
                     gaze_results = future.result()
                 elif future == emotion_future:
                     emotion_results = future.result()
+                elif future == voice_future:
+                    voice_results = future.result()
 
         if gaze_results:
             print("Gaze Analysis Results:")
@@ -207,7 +229,12 @@ def record_video_audio():
         else:
             print("Failed to get emotional analysis results.")
 
-        if gaze_results and emotion_results:
+        if voice_results:
+            print(voice_results)
+        else:
+            print("Failed to get voice analysis results.")
+
+        if gaze_results and emotion_results and voice_results:
             combined = [(gaze_results[i], emotion_results[i]) for i in range(DURATION)]
 
             print("Combined results:")
@@ -276,7 +303,7 @@ if __name__ == '__main__':
     if test_recording():
         print("Test recording successful. Starting the server...")
         # app.run(port="5001") #, debug=True)
-        socketio.run(app, host="0.0.0.0", port=5001, debug=True)
+        socketio.run(app, host="0.0.0.0", port=5001)
     else:
         print("Test recording failed. Please check your IP webcam connection and try again.")
         exit(1)

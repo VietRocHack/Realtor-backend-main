@@ -68,10 +68,10 @@ class PinataService:
         }
         file = requests.post(url=url, headers=headers, files=files)
         print("File uploaded successfully.")
-        print(file.json())
+        # print(file.json())
         
         group_upload_url = f"https://api.pinata.cloud/v3/files/groups/{group_id}/ids/{file.json().get('data').get('id')}"
-        print(group_upload_url)
+        # print(group_upload_url)
 
         response = requests.request("PUT", group_upload_url, headers=headers)
 

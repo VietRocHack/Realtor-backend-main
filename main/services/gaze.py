@@ -21,11 +21,11 @@ def interpret_gaze_vector(vec):
 
 def analyze_gaze_vectors(gaze_vectors):
     object_mapping = {
-        'left': 'bottle',
-        'right': 'laptop',
-        'ahead': 'chair',
-        'down': 'table',
-        'up': 'ceiling'
+        'left': 'fan',
+        'right': 'table',
+        'ahead': 'window',
+        'down': 'window',
+        'up': 'window'
     }
     
     frames_per_second = FPS
