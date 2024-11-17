@@ -1,3 +1,4 @@
+from typing import Counter
 from flask import Flask, jsonify
 import threading
 import time
@@ -15,7 +16,7 @@ pinata_secret_key = os.getenv("PINATA_API_KEY")
 pinata_jwt = os.getenv("PINATA_JWT")
 pinata_gateway = os.getenv("PINATA_GATEWAY")
 pinata_group_id = "01933748-f918-7e94-8c17-7564581a5188"
-processing_server_url = "https://0280-72-225-33-153.ngrok-free.app/process_video_from_cid"
+processing_server_url = "http://127.0.0.1:5000/process_video_from_cid"
 
 pinata_service = PinataService(pinata_secret_key, pinata_jwt, pinata_gateway)
 
@@ -29,7 +30,7 @@ thread = None
 camera_ip = "http://192.168.137.37:8080"
 
 # Recording settings
-FPS = 5  # Set to 15 frames per second
+FPS = 10  # Set to 15 frames per second
 DURATION = 10  # Total duration in seconds
 FRAME_COUNT = FPS * DURATION
 
@@ -61,11 +62,55 @@ def send_to_processing_server(video_cid):
         response.raise_for_status()
         elapsed_time = time.time() - start_time
         print(f"Video CID {video_cid} sent to processing server successfully. Time taken: {elapsed_time:.2f} seconds")
-        return True
+        return response.json()
     except requests.RequestException as e:
         elapsed_time = time.time() - start_time
         print(f"Error sending video CID to processing server: {str(e)}. Time taken: {elapsed_time:.2f} seconds")
-        return False
+        return None
+
+
+def interpret_gaze_vector(vec):
+    x, y, _ = map(float, vec)
+    if -0.2 <= x <= 0.2 and -0.2 <= y <= 0.2:
+        return 'ahead'
+    elif x < 0 and y < 0:
+        return 'left'
+    elif x > 0 and y > 0:
+        return 'right'
+    elif x > 0 and y < 0:
+        return 'up'
+    elif x < 0 and y > 0:
+        return 'down'
+    else:
+        return 'unknown'
+
+def analyze_gaze_vectors(gaze_vectors):
+    object_mapping = {
+        'left': 'bottle',
+        'right': 'laptop',
+        'ahead': 'chair',
+        'down': 'table',
+        'up': 'ceiling'
+    }
+    
+    frames_per_second = FPS
+    
+    results = []
+    gaze_list = [gaze_vectors[str(i)] for i in range(FRAME_COUNT)]
+
+    for i in range(DURATION):
+        start_frame = i * frames_per_second
+        end_frame = start_frame + frames_per_second
+        second_vectors = gaze_list[start_frame:end_frame]
+        
+        interpreted_gazes = [interpret_gaze_vector(vec['vec']) for vec in second_vectors]
+        direction_counts = Counter(interpreted_gazes)
+        most_common_direction = direction_counts.most_common(1)[0][0]
+        most_looked_object = object_mapping.get(most_common_direction, 'unknown')
+        
+        results.append(f"Second {i+1}: {most_looked_object}")
+    
+    return results
 
 def record_video_audio():
     global recording
@@ -104,11 +149,15 @@ def record_video_audio():
         print(f"Video ID (CID): {video_cid}")
         print(f"Audio ID (CID): {audio_cid}")
 
-        # Send video CID to processing server
-        if send_to_processing_server(video_cid):
-            print("Video sent for processing.")
+       # Send video to processing server and analyze results
+        gaze_vectors = send_to_processing_server(video_cid)
+        if gaze_vectors:
+            analysis_results = analyze_gaze_vectors(gaze_vectors['results'])
+            print("Gaze Analysis Results:")
+            for result in analysis_results:
+                print(result)
         else:
-            print("Failed to send video for processing.")
+            print("Failed to get gaze vectors from processing server.")
 
         break
     recording = False
