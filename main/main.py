@@ -1,14 +1,11 @@
 from flask import Flask, jsonify
-import cv2
-import requests
 import threading
 import time
 import os
-import wave
-import io
 import dotenv
-import os
-from pinata_services import PinataService
+from services.pinata_services import PinataService
+from services.audio import record_audio, test_audio_recording
+from services.video import record_video, test_video_recording
 
 dotenv.load_dotenv()
 
@@ -17,7 +14,6 @@ pinata_jwt = os.getenv("PINATA_JWT")
 pinata_gateway = os.getenv("PINATA_GATEWAY")
 
 pinata_service = PinataService(pinata_secret_key, pinata_jwt, pinata_gateway)
-
 
 app = Flask(__name__)
 
@@ -36,63 +32,17 @@ DURATION = 10  # Total duration in seconds
 # Pinata settings
 group_id = "01933748-f918-7e94-8c17-7564581a5188"
 
-def record_audio(filename, duration):
-    audio_url = f"{camera_ip}/audio.wav"
-    start_time = time.time()
-    audio_data = io.BytesIO()
-
-    while time.time() - start_time < duration:
-        try:
-            response = requests.get(audio_url, stream=True, timeout=1)
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:
-                    audio_data.write(chunk)
-                if time.time() - start_time >= duration:
-                    break
-        except requests.RequestException as e:
-            print(f"Error streaming audio: {str(e)}")
-            return False
-
-    audio_data.seek(0)
-    with wave.open(filename, 'wb') as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(44100)
-        wf.writeframes(audio_data.read())
-    return True
-
 def test_recording():
     print("Running recording test...")
     if not os.path.exists('test_recordings'):
         os.makedirs('test_recordings')
 
     # Test video recording
-    cap = cv2.VideoCapture(f"{camera_ip}/video")
-    if not cap.isOpened():
-        print("Failed to open video stream")
+    if not test_video_recording(camera_ip, 'test_recordings/test_video.mp4', FPS, 15):  # 15 frames = 1 second at 15 FPS
         return False
 
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter('test_recordings/test_video.mp4', fourcc, FPS, (640, 480))
-
-    frames_recorded = 0
-    start_time = time.time()
-    while frames_recorded < 15:  # Record 1 second of video
-        ret, frame = cap.read()
-        if not ret:
-            print("Failed to capture frame")
-            cap.release()
-            out.release()
-            return False
-        out.write(frame)
-        frames_recorded += 1
-
-    cap.release()
-    out.release()
-
     # Test audio recording
-    if not record_audio('test_recordings/test_audio.wav', 1):
-        print("Failed to record audio")
+    if not test_audio_recording(camera_ip, 'test_recordings/test_audio.wav'):
         return False
 
     print("Recording test completed successfully")
@@ -100,7 +50,6 @@ def test_recording():
 
 def record_video_audio():
     global recording
-    cap = cv2.VideoCapture(f"{camera_ip}/video")
 
     if not os.path.exists('recordings'):
         os.makedirs('recordings')
@@ -109,31 +58,16 @@ def record_video_audio():
         video_filename = f'recordings/video_{int(time.time())}.mp4'
         audio_filename = f'recordings/audio_{int(time.time())}.wav'
 
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(video_filename, fourcc, FPS, (640, 480))
+        video_thread = threading.Thread(target=record_video, args=(camera_ip, video_filename, FPS, FRAME_COUNT))
+        audio_thread = threading.Thread(target=record_audio, args=(camera_ip, audio_filename, DURATION))
 
-        audio_thread = threading.Thread(target=record_audio, args=(audio_filename, DURATION))
+        video_thread.start()
         audio_thread.start()
 
-        frames_recorded = 0
-        start_time = time.time()
-        while recording and frames_recorded < FRAME_COUNT:
-            ret, frame = cap.read()
-            if ret:
-                out.write(frame)
-                frames_recorded += 1
-                
-                elapsed_time = time.time() - start_time
-                expected_time = frames_recorded / FPS
-                if elapsed_time < expected_time:
-                    time.sleep(expected_time - elapsed_time)
-            else:
-                break
-
-        out.release()
+        video_thread.join()
         audio_thread.join()
 
-        print(f"Recording stopped after {frames_recorded} frames and {time.time() - start_time:.2f} seconds")
+        print(f"Recording stopped after {FRAME_COUNT} frames and {DURATION:.2f} seconds")
 
         # Upload video and audio to Pinata
         with open(video_filename, 'rb') as video_file:
@@ -144,8 +78,6 @@ def record_video_audio():
 
         print(f"Video ID (CID): {video_cid}")
         print(f"Audio ID (CID): {audio_cid}")
-
-    cap.release()
 
 @app.route('/api/start_session', methods=['POST'])
 def start_session():
