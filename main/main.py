@@ -29,9 +29,9 @@ thread = None
 camera_ip = "http://192.168.137.37:8080"
 
 # Recording settings
-FRAME_COUNT = 150
-FPS = 15  # Set to 15 frames per second
+FPS = 5  # Set to 15 frames per second
 DURATION = 10  # Total duration in seconds
+FRAME_COUNT = FPS * DURATION
 
 
 def test_recording():
@@ -111,6 +111,7 @@ def record_video_audio():
             print("Failed to send video for processing.")
 
         break
+    recording = False
 
 @app.route('/api/start_session', methods=['POST'])
 def start_session():
