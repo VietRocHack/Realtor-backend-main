@@ -4,6 +4,9 @@ import time
 import os
 import dotenv
 import requests
+import json
+import numpy as np
+import matplotlib.pyplot as plt
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.pinata_services import PinataService
 from services.audio import record_audio, test_audio_recording
@@ -35,6 +38,9 @@ camera_ip = "http://192.168.137.37:8080"
 FPS = 10  # Set to 10 frames per second
 DURATION = 10  # Total duration in seconds
 FRAME_COUNT = FPS * DURATION
+
+# Data storage
+data_file = 'object_emotion_counts.json'
 
 def test_recording():
     print("Running recording test...")
@@ -86,6 +92,47 @@ def send_to_emotional_analysis_server(video_cid):
         elapsed_time = time.time() - start_time
         print(f"Error sending video CID to emotional analysis server: {str(e)}. Time taken: {elapsed_time:.2f} seconds")
         return None
+
+def update_object_emotion_counts(object_emotion_pairs):
+    if os.path.exists(data_file):
+        with open(data_file, 'r') as f:
+            counts = json.load(f)
+    else:
+        counts = {}
+
+    for obj, emotion in object_emotion_pairs:
+        if obj not in counts:
+            counts[obj] = {}
+        if emotion not in counts[obj]:
+            counts[obj][emotion] = 0
+        counts[obj][emotion] += 1
+
+    with open(data_file, 'w') as f:
+        json.dump(counts, f)
+
+    return counts
+
+def generate_heatmap(counts):
+    objects = list(counts.keys())
+    emotions = list(set(emotion for obj in counts for emotion in counts[obj]))
+
+    data = np.zeros((len(objects), len(emotions)))
+
+    for i, obj in enumerate(objects):
+        for j, emotion in enumerate(emotions):
+            data[i, j] = counts[obj].get(emotion, 0)
+
+    plt.figure(figsize=(12, 8))
+    plt.imshow(data, cmap='YlOrRd', aspect='auto')
+    plt.colorbar(label='Count')
+    plt.xticks(range(len(emotions)), emotions, rotation=45, ha='right')
+    plt.yticks(range(len(objects)), objects)
+    plt.xlabel('Emotions')
+    plt.ylabel('Objects')
+    plt.title('Object-Emotion Heatmap')
+    plt.tight_layout()
+    plt.savefig('object_emotion_heatmap.png')
+    plt.close()
 
 def record_video_audio():
     global recording
@@ -154,10 +201,15 @@ def record_video_audio():
             combined = [(gaze_results[i], emotion_results[i]) for i in range(DURATION)]
 
             print("Combined results:")
-            for i in range(len(combined)):
-                print(f"Minute{i}: {combined[i]}")
+            for i, (obj, emotion) in enumerate(combined):
+                print(f"Second {i+1}: Object - {obj}, Emotion - {emotion}")
+
+            # Update object-emotion counts and generate heatmap
+            counts = update_object_emotion_counts(combined)
+            generate_heatmap(counts)
+            print("Heatmap generated and saved as 'object_emotion_heatmap.png'")
         else:
-            print("Failure to combine!")
+            print("Failure to combine results!")
         break
     recording = False
 

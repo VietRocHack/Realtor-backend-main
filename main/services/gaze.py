@@ -31,7 +31,12 @@ def analyze_gaze_vectors(gaze_vectors):
     frames_per_second = FPS
     
     results = []
-    gaze_list = [gaze_vectors[str(i)] for i in range(FRAME_COUNT)]
+    gaze_list = []
+    for i in range(FRAME_COUNT):
+        if str(i) not in gaze_vectors:
+            gaze_list.append({"vec": ["0", "0", "0"]})
+        else:
+            gaze_list.append(gaze_vectors[str(i)])
 
     for i in range(DURATION):
         start_frame = i * frames_per_second
